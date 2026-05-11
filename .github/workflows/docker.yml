@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # ← Ключевой фикс
+  packages: write
 
 jobs:
   build:
@@ -18,10 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Lowercase names
+      - name: Lowercase actor
         id: lc
-        run: |
-          echo "ACTOR_LC=${ACTOR,,}" >> $GITHUB_ENV
+        run: echo "ACTOR_LC=${ACTOR,,}" >> $GITHUB_ENV
         env:
           ACTOR: ${{ github.actor }}
 
@@ -36,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' }}   # push только на main
           tags: |
             ghcr.io/${{ env.ACTOR_LC }}/dasha:latest
             ghcr.io/${{ env.ACTOR_LC }}/dasha:sha-${{ github.sha }}
