@@ -1,0 +1,9 @@
+gradio>=5.0
+torch
+torchaudio
+librosa
+numpy
+matplotlib
+soundfile
+datasets
+scipy
