@@ -14,19 +14,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set lowercase names
+        id: lc
+        run: |
+          echo "ACTOR_LC=${ACTOR,,}" >> $GITHUB_ENV
+          echo "OWNER_LC=${OWNER,,}" >> $GITHUB_ENV
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}          # Marsik-dev
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (personal namespace)
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ghcr.io/${{ github.actor }}/dasha:latest
-            ghcr.io/${{ github.actor }}/dasha:sha-${{ github.sha }}
-          # Используем личный аккаунт Marsik-dev — права есть
+            ghcr.io/${{ env.ACTOR_LC }}/dasha:latest
+            ghcr.io/${{ env.ACTOR_LC }}/dasha:sha-${{ github.sha }}
