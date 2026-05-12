@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -16,17 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Lowercase actor
-        id: lc
-        run: echo "ACTOR_LC=${ACTOR,,}" >> $GITHUB_ENV
-        env:
-          ACTOR: ${{ github.actor }}
-
-      - name: Login to GHCR with PAT
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: Kuznetsov-Diplom
           password: ${{ secrets.GHCR_PAT }}
 
       - name: Build & Push
@@ -35,5 +30,5 @@ jobs:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ghcr.io/${{ env.ACTOR_LC }}/dasha:latest
-            ghcr.io/${{ env.ACTOR_LC }}/dasha:sha-${{ github.sha }}
+            ghcr.io/kuznetsov-diplom/dasha:latest
+            ghcr.io/kuznetsov-diplom/dasha:sha-${{ github.sha }}
