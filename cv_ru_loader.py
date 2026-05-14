@@ -4,7 +4,7 @@ import pandas as pd
 from typing import List, Dict, Any
 
 class CommonVoiceRULoader:
-    """Загрузчик Common Voice Russian с фильтром спикеров (минимум 10 фраз)."""
+    """Временная версия — только 10 спикеров для отладки."""
 
     def __init__(self, dataset_root: str = "data/firefox-ru-dataset"):
         self.base_dir = Path(dataset_root).resolve()
@@ -12,14 +12,12 @@ class CommonVoiceRULoader:
         self.validated_path = self.base_dir / "validated.tsv"
         self.speaker_col = "client_id"
 
-    def load_speakers(self, min_phrases: int = 10) -> List[str]:
-        """Возвращает только спикеров, у которых >= min_phrases записей."""
+    def load_speakers(self) -> List[str]:
         df = pd.read_csv(self.validated_path, sep="\t", low_memory=False)
-        speaker_counts = df[self.speaker_col].value_counts()
-        valid_speakers = speaker_counts[speaker_counts >= min_phrases].index.tolist()
-        valid_speakers = sorted(valid_speakers)
-        print(f"✅ Загружено {len(valid_speakers)} спикеров с >= {min_phrases} фразами")
-        return valid_speakers
+        speakers = sorted(df[self.speaker_col].unique().tolist())
+        limited = speakers[:10000]                    # ← только 10 спикеров
+        print(f"✅ DEBUG: Загружено {len(limited)} спикеров (ограничено для отладки)")
+        return limited
 
     def load_phrases_for_speaker(self, speaker_id: str, max_phrases: int = 20) -> List[Dict[str, Any]]:
         df = pd.read_csv(self.validated_path, sep="\t", low_memory=False)
