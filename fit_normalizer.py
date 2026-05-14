@@ -1,26 +1,25 @@
-# scripts/fit_normalizer.py
+# fit_normalizer.py
 import sys
 from pathlib import Path
-# Фикс импортов — работает и при запуске python scripts/..., и python -m scripts...
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 from scripts.cv_ru_loader import CommonVoiceRULoader
 from scripts.pipeline import AudioPipeline
 
-def fit_normalizer(n_samples: int = 300):
-    """Обучаем FeatureNormalizer на реальных записях датасета.
-    После этого 26-мерный вектор всегда будет в диапазоне [0, 1] (раздел 2.6.1 диплома)."""
-    print(f"🚀 Обучение нормализатора на {n_samples} примерах...")
+def fit_normalizer(n_samples: int = 1000):
+    """Обучаем FeatureNormalizer (Z-score) на реальных записях из CommonVoice RU.
+    Использует extract_raw_26 — строго по требованиям Главы 2 (сохранение mean/std).
+    """
+    print(f"🚀 Обучение Z-нормализатора на {n_samples} примерах (Глава 2)...")
 
     loader = CommonVoiceRULoader()
     pipeline = AudioPipeline()
 
-    # Берём всех спикеров и случайно выбираем несколько
     all_speakers = loader.load_speakers()
     sample_speakers = np.random.choice(all_speakers, size=min(n_samples, len(all_speakers)), replace=False)
 
-    features_list = []
+    features_list: list[np.ndarray] = []
     processed = 0
 
     for speaker_id in sample_speakers:
@@ -28,10 +27,10 @@ def fit_normalizer(n_samples: int = 300):
         for phrase in phrases:
             audio_path = phrase["audio_path"]
             try:
-                features, _ = pipeline.extract_features_detailed(audio_path)
-                features_list.append(features)
+                raw_26 = pipeline.extract_raw_26(audio_path)  # СЫРОЙ вектор!
+                features_list.append(raw_26)
                 processed += 1
-                if processed % 50 == 0:
+                if processed % 100 == 0:
                     print(f"  → обработано {processed}/{n_samples} записей")
                 if processed >= n_samples:
                     break
@@ -43,10 +42,10 @@ def fit_normalizer(n_samples: int = 300):
     if not features_list:
         raise ValueError("Не удалось обработать ни одной записи!")
 
-    pipeline.normalizer.fit(features_list)
-    print(f"\n✅ Нормализатор успешно обучен на {len(features_list)} примерах!")
-    print(f"   Файл создан: models/audio_params/normalizer_params.json")
-    print("   Теперь вектор всегда нормализован к [0, 1] — готов к Главе 3 (НПБК)")
+    pipeline.normalizer.fit(features_list)  # fit на СЫРЫХ векторах!
+    print(f"\n✅ Z-нормализатор успешно обучен на {len(features_list)} примерах!")
+    print(f"   Параметры сохранены: models/audio_params/normalizer_params.json")
+    print("   Теперь 26-мерный вектор готов к Главе 3 (нейросетевой преобразователь по ГОСТ Р 52633)!")
 
 if __name__ == "__main__":
-    fit_normalizer(n_samples=1000)   # можно поставить 500–1000 для большей точности
+    fit_normalizer(n_samples=1000)
