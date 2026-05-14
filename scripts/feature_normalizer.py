@@ -15,14 +15,29 @@ class FeatureNormalizer:
         self._load_params()
 
     def _load_params(self):
+        """Загружает параметры. Если файл старый (MinMax) или повреждён — автоматически удаляет его."""
         if self.params_path.exists():
-            with open(self.params_path, encoding="utf-8") as f:
-                data = json.load(f)
-            self.mean = np.array(data["mean"])
-            self.std = np.array(data["std"])
-            print(f"✅ FeatureNormalizer загружен (Z-score из {self.params_path})")
+            try:
+                with open(self.params_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if "mean" in data and "std" in data:
+                    self.mean = np.array(data["mean"])
+                    self.std = np.array(data["std"])
+                    print(f"✅ FeatureNormalizer загружен (Z-score из {self.params_path})")
+                else:
+                    # Старый MinMax-файл
+                    print(f"🗑️  Старый normalizer_params.json (MinMax) удалён")
+                    self.params_path.unlink()
+                    self.mean = None
+                    self.std = None
+            except Exception as e:
+                print(f"🗑️  Повреждённый normalizer_params.json удалён: {e}")
+                if self.params_path.exists():
+                    self.params_path.unlink()
+                self.mean = None
+                self.std = None
         else:
-            print("⚠️  normalizer_params.json не найден — нормализация отключена (identity)")
+            print("normalizer_params.json не найден — нормализация отключена (identity)")
 
     def fit(self, features_list: List[np.ndarray]):
         """Обучаем Z-нормализатор на сырых 26-мерных векторах."""
@@ -39,7 +54,7 @@ class FeatureNormalizer:
                 "std": self.std.tolist(),
                 "n_samples": len(features_list)
             }, f, ensure_ascii=False, indent=2)
-        print(f"✅ Z-нормализатор успешно обучен на {len(features_list)} примерах и сохранён")
+        print(f"Z-нормализатор успешно обучен на {len(features_list)} примерах и сохранён")
 
     def transform(self, features: np.ndarray) -> np.ndarray:
         """Применяем Z-score нормализацию."""

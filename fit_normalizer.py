@@ -1,6 +1,7 @@
 # fit_normalizer.py
 import sys
 from pathlib import Path
+import os
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
@@ -12,6 +13,12 @@ def fit_normalizer(n_samples: int = 1000):
     Использует extract_raw_26 — строго по требованиям Главы 2 (сохранение mean/std).
     """
     print(f"🚀 Обучение Z-нормализатора на {n_samples} примерах (Глава 2)...")
+
+    # 🔥 Удаляем старый MinMax-файл, если он остался
+    params_path = Path("models/audio_params/normalizer_params.json")
+    if params_path.exists():
+        print("🗑️  Старый normalizer_params.json (MinMax) удалён")
+        params_path.unlink()
 
     loader = CommonVoiceRULoader()
     pipeline = AudioPipeline()
@@ -35,7 +42,7 @@ def fit_normalizer(n_samples: int = 1000):
                 if processed >= n_samples:
                     break
             except Exception as e:
-                print(f"  ⚠️ Пропущен {audio_path}: {e}")
+                print(f"  ⚠️  Пропущен {audio_path}: {e}")
         if processed >= n_samples:
             break
 
