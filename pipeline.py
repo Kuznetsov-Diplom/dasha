@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 import librosa
 from typing import Tuple, Dict, Any
-from .cv_ru_loader import CommonVoiceRULoader
-from .feature_normalizer import FeatureNormalizer
+from cv_ru_loader import CommonVoiceRULoader
+from feature_normalizer import FeatureNormalizer
 
 class AudioPipeline:
     """Основной пайплайн предварительной обработки и извлечения признаков строго по Главе 2
