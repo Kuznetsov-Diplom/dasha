@@ -1,148 +1,112 @@
 import gradio as gr
-from typing import List, Tuple
-import os
-
+from pathlib import Path
 from cv_ru_loader import load_speakers_and_phrases
 from pipeline import process_phrase
-from feature_normalizer import FeatureNormalizer
-
-
-def shorten_speaker_id(speaker_id: str, length: int = 8) -> str:
-    '''Сокращаем client_id, оставляем последние length символов'''
-    if len(speaker_id) > length:
-        return speaker_id[-length:]
-    return speaker_id
-
-
-def get_speakers_list() -> List[Tuple[str, str]]:
-    '''Возвращает список (display_name, speaker_id)'''
-    try:
-        speakers = load_speakers_and_phrases()
-        speakers_list = []
-        for speaker_id, phrases in speakers.items():
-            short_id = shorten_speaker_id(speaker_id)
-            num_phrases = len(phrases)
-            display = f"{short_id} ({num_phrases} фраз)"
-            speakers_list.append((display, speaker_id))
-        # Сортируем по display name
-        speakers_list.sort(key=lambda x: x[0])
-        return speakers_list
-    except Exception as e:
-        print(f"Ошибка загрузки спикеров: {e}")
-        return [("Ошибка загрузки данных", "error")]
-
-
-def get_phrases_for_speaker(speaker_id: str) -> List[Tuple[str, str]]:
-    '''Возвращает список (phrase_text, audio_path) для спикера'''
-    if not speaker_id or speaker_id == "error":
-        return [("Нет данных", "")]
-    try:
-        speakers = load_speakers_and_phrases()
-        phrases = speakers.get(speaker_id, [])
-        return [(p['sentence'], p['path']) for p in phrases]
-    except:
-        return [("Ошибка", "")]
-
-
-def process_and_visualize(audio_path: str):
-    '''Основная функция обработки с возвратом всех визуализаций'''
-    if not audio_path:
-        return "Выберите аудио", None, None, None, None, None, "[]"
-    
-    try:
-        result = process_phrase(audio_path)
-        
-        # result должен содержать: waveform, pre_emphasis, vad, mfcc, normalized_vector и т.д.
-        steps_html = """
-        <h3>✅ Обработка завершена успешно!</h3>
-        <p>1. Загрузка аудио — OK</p>
-        <p>2. Pre-emphasis — OK</p>
-        <p>3. VAD — OK</p>
-        <p>4. MFCC — OK</p>
-        <p>5. Нормализация [0,1] — OK</p>
-        <p>6. Формирование вектора — OK</p>
-        <p>7. НПБК (скелет) — OK</p>
-        """
-        
-        normalized_str = str(result.get('normalized_vector', []))
-        
-        return (
-            steps_html,
-            result.get('waveform_plot'),
-            result.get('pre_emphasis_plot'),
-            result.get('mfcc_plot'),
-            normalized_str,
-            result.get('normalized_vector', [])
-        )
-    except Exception as e:
-        return f"<h3 style='color:red'>Ошибка обработки: {str(e)}</h3>", None, None, None, "[]", []
-
 
 def create_interface():
-    with gr.Blocks(title="Dasha — Биометрия речи", theme=gr.themes.Dark()) as demo:
-        gr.Markdown("""
-        # Dasha — Система биометрической обработки речи
-        **Одно окно для демонстрации полного пайплайна**
-        Выберите спикера → фразу → обработайте по алгоритму ГОСТ
-        """)
-        
+    speakers_data = load_speakers_and_phrases()
+
+    speaker_choices = []
+    speaker_to_phrases = {}
+    for speaker_id, info in speakers_data.items():
+        short_id = speaker_id[-8:] if len(speaker_id) > 8 else speaker_id
+        count = len(info["phrases"])
+        display_name = f"{short_id} ({count} фраз)"
+        speaker_choices.append(display_name)
+        speaker_to_phrases[display_name] = (speaker_id, info["phrases"])
+
+    def update_phrases(speaker_display):
+        if not speaker_display:
+            return gr.update(choices=[]), None
+        speaker_id, phrases = speaker_to_phrases[speaker_display]
+        phrase_choices = [p["sentence"] for p in phrases]
+        audio_path = phrases[0]["audio_path"] if phrases else None
+        return gr.update(choices=phrase_choices, value=phrase_choices[0] if phrase_choices else None), audio_path
+
+    def get_audio_path(speaker_display, phrase_text):
+        if not speaker_display or not phrase_text:
+            return None
+        speaker_id, phrases = speaker_to_phrases[speaker_display]
+        for p in phrases:
+            if p["sentence"] == phrase_text:
+                return p["audio_path"]
+        return None
+
+    def process_and_show(speaker_display, phrase_text):
+        audio_path = get_audio_path(speaker_display, phrase_text)
+        if not audio_path:
+            return [None] * 4, "❌ Ошибка: файл не найден"
+
+        try:
+            result = process_phrase(audio_path)
+            
+            vector_text = "\n".join([f"{i+1:2d}. {v:.6f}" for i, v in enumerate(result["normalized_vector"])])
+            
+            return (
+                result["waveform_plot"],
+                result["pre_emphasis_plot"],
+                result["mfcc_plot"],
+                f"✅ Нормализованный вектор [0, 1] (26 значений):\n\n{vector_text}",
+                "✅ Обработка завершена успешно!"
+            )
+        except Exception as e:
+            return [None] * 4, f"❌ Ошибка обработки: {str(e)}"
+
+    with gr.Blocks(title="Dasha — Биометрия речи", theme=gr.themes.Soft()) as demo:
+        gr.Markdown("# Dasha — Система биометрической обработки речи")
+        gr.Markdown("**Одно окно** • Выберите спикера + фразу → обработка по алгоритму ГОСТ")
+
         with gr.Row():
             with gr.Column(scale=1):
+                gr.Markdown("### Выберите спикера")
                 speaker_dropdown = gr.Dropdown(
-                    label="Выберите спикера",
-                    choices=[("Загрузка...", "")],
-                    value="",
-                    interactive=True
+                    choices=speaker_choices,
+                    label="Спикер",
+                    value=speaker_choices[0] if speaker_choices else None
                 )
                 
-                phrase_dropdown = gr.Dropdown(
-                    label="Выберите фразу",
-                    choices=[("Выберите спикера", "")],
-                    interactive=True
-                )
+                gr.Markdown("### Выберите фразу")
+                phrase_dropdown = gr.Dropdown(label="Фраза", choices=[], interactive=True)
                 
-                audio_player = gr.Audio(
-                    label="Прослушать аудио",
-                    type="filepath",
-                    interactive=False
-                )
+                audio_player = gr.Audio(label="🎧 Прослушать аудио", interactive=False, type="filepath")
                 
                 process_btn = gr.Button("🚀 Обработать фразу", variant="primary", size="large")
-            
+
             with gr.Column(scale=2):
-                output_html = gr.HTML(label="Процесс обработки")
-                waveform_plot = gr.Plot(label="Waveform")
-                pre_plot = gr.Plot(label="Pre-emphasis")
-                mfcc_plot = gr.Plot(label="MFCC признаки")
-                normalized_output = gr.Textbox(label="Нормализованный вектор [0, 1]", lines=8)
+                gr.Markdown("### Результаты обработки (по ГОСТ)")
                 
+                status = gr.Markdown("Нажмите кнопку «Обработать фразу»")
+
+                with gr.Row():
+                    with gr.Column():
+                        waveform_plot = gr.Plot(label="1. Оригинальный waveform")
+                        pre_plot = gr.Plot(label="2. После Pre-emphasis")
+                    
+                    with gr.Column():
+                        mfcc_plot = gr.Plot(label="3. MFCC")
+                        vector_output = gr.Textbox(label="4. Нормализованный вектор [0, 1]", lines=15, show_copy_button=True)
+
         # События
         speaker_dropdown.change(
-            fn=get_phrases_for_speaker,
+            fn=update_phrases,
             inputs=speaker_dropdown,
-            outputs=phrase_dropdown
+            outputs=[phrase_dropdown, audio_player]
         )
-        
+
         phrase_dropdown.change(
-            fn=lambda p: p[1] if p else None,
-            inputs=phrase_dropdown,
+            fn=get_audio_path,
+            inputs=[speaker_dropdown, phrase_dropdown],
             outputs=audio_player
         )
-        
+
         process_btn.click(
-            fn=process_and_visualize,
-            inputs=audio_player,
-            outputs=[output_html, waveform_plot, pre_plot, mfcc_plot, normalized_output]
+            fn=process_and_show,
+            inputs=[speaker_dropdown, phrase_dropdown],
+            outputs=[waveform_plot, pre_plot, mfcc_plot, vector_output, status]
         )
-        
-        # Загрузка спикеров при старте
-        demo.load(
-            fn=get_speakers_list,
-            inputs=None,
-            outputs=speaker_dropdown
-        )
-    
+
     return demo
+
 
 if __name__ == "__main__":
     demo = create_interface()

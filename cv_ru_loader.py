@@ -1,70 +1,72 @@
-# cv_ru_loader.py
-from pathlib import Path
 import pandas as pd
-from typing import List, Dict, Any
-import os
+from pathlib import Path
 from dotenv import load_dotenv
+import os
+from typing import Dict, List
 
 load_dotenv()
 
-MIN_PHRASES_PER_SPEAKER = int(os.getenv("MIN_PHRASES_PER_SPEAKER", 10))
-
 class CommonVoiceRULoader:
-    """Загрузчик датасета Common Voice RU.
-    Поддерживает фильтрацию по минимальному количеству фраз (из .env).
-    """
+    def __init__(self):
+        self.data_dir = Path("data/firefox-ru-dataset")
+        self.validated_path = self.data_dir / "validated.tsv"
+        self.clips_dir = self.data_dir / "clips"
+        self.min_phrases = int(os.getenv("MIN_PHRASES_PER_SPEAKER", 10))
+        self._data = None
 
-    def __init__(self, dataset_root: str = "data/firefox-ru-dataset"):
-        self.base_dir = Path(dataset_root).resolve()
-        self.clips_dir = self.base_dir / "clips"
-        self.validated_path = self.base_dir / "validated.tsv"
-        self.speaker_col = "client_id"
-
-    def load_speakers(self) -> List[str]:
-        """Возвращает список всех client_id."""
+    def _load_data(self):
+        """Загружаем validated.tsv ТОЛЬКО ОДИН раз"""
+        if self._data is not None:
+            return self._data
         if not self.validated_path.exists():
-            raise FileNotFoundError(f"Не найден validated.tsv в {self.validated_path.parent}")
-        df = pd.read_csv(self.validated_path, sep="\t", low_memory=False)
-        speakers = sorted(df[self.speaker_col].unique().tolist())
-        print(f"✅ Загружено {len(speakers)} спикеров из датасета")
+            raise FileNotFoundError(
+                f"Файл не найден: {self.validated_path}\n"
+                "Скачайте Common Voice RU датасет в папку data/firefox-ru-dataset/"
+            )
+        print(f"📂 Загружаем {self.validated_path.name} (это может занять 5–15 секунд)...")
+        self._data = pd.read_csv(self.validated_path, sep="\t", low_memory=False)
+        print(f"✅ Загружено {len(self._data):,} строк из validated.tsv")
+        return self._data
+
+    def load_speakers_and_phrases(self, max_speakers: int = 500) -> Dict[str, Dict]:
+        """Быстрая загрузка всех спикеров"""
+        df = self._load_data()
+        
+        # Группируем по client_id один раз
+        grouped = df.groupby('client_id')
+        
+        speakers = {}
+        count = 0
+        
+        for speaker_id, group in grouped:
+            if len(group) < self.min_phrases:
+                continue
+
+            phrases = []
+            for _, row in group.iterrows():
+                audio_path = self.clips_dir / row['path']
+                if audio_path.exists():
+                    phrases.append({
+                        "sentence": row['sentence'],
+                        "audio_path": str(audio_path)
+                    })
+                if len(phrases) >= 50:          # ограничиваем для скорости
+                    break
+
+            if len(phrases) >= self.min_phrases:
+                speakers[speaker_id] = {
+                    "phrases": phrases,
+                    "total_phrases": len(group)
+                }
+                count += 1
+                if count >= max_speakers:
+                    break
+
+        print(f"✅ Загружено {len(speakers)} спикеров (минимум {self.min_phrases} фраз на спикера)")
         return speakers
 
-    def load_phrases_for_speaker(self, speaker_id: str, max_phrases: int = 20) -> List[Dict[str, Any]]:
-        """Возвращает список фраз для спикера."""
-        df = pd.read_csv(self.validated_path, sep="\t", low_memory=False)
-        df_speaker = df[df[self.speaker_col] == speaker_id].head(max_phrases)
 
-        phrases = []
-        text_col = "sentence" if "sentence" in df.columns else "text"
-        for _, row in df_speaker.iterrows():
-            phrases.append({
-                "text": str(row.get(text_col, "").strip()),
-                "audio_path": str(self.clips_dir / str(row["path"])),
-            })
-        return phrases
-
-
-def load_speakers_and_phrases() -> Dict[str, List[Dict[str, Any]]]:
-    """Главный вход для UI: возвращает dict {speaker_id: [phrase_dicts]} 
-    Только спикеры с MIN_PHRASES_PER_SPEAKER фразами.
-    """
+# Для совместимости с ui.py
+def load_speakers_and_phrases():
     loader = CommonVoiceRULoader()
-    all_speakers = loader.load_speakers()
-    
-    result = {}
-    for speaker_id in all_speakers:
-        phrases = loader.load_phrases_for_speaker(speaker_id, max_phrases=50)  # берём с запасом
-        if len(phrases) >= MIN_PHRASES_PER_SPEAKER:
-            # приводим ключи к тому, что ожидает ui.py
-            converted_phrases = [{
-                "sentence": p["text"],
-                "path": p["audio_path"]
-            } for p in phrases[:20]]  # ограничиваем 20 фразами для UI
-            result[speaker_id] = converted_phrases
-    
-    print(f"✅ load_speakers_and_phrases: найдено {len(result)} спикеров с >= {MIN_PHRASES_PER_SPEAKER} фразами")
-    return result
-
-if __name__ == "__main__":
-    data = load_speakers_and_phrases()
-    print(f"Тест: {len(data)} спикеров загружено")
+    return loader.load_speakers_and_phrases()
