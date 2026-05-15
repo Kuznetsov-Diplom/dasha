@@ -1,8 +1,9 @@
-# Dasha
+# Dasha — Voice Biometrics (GOST R 52633)
 
-Система генерации криптографических ключей на основе голосовой биометрии по ГОСТ Р 52633.
+Переписанный чистый код для дипломной работы.
 
-## Запуск демо
+## Запуск
+python -m pip install -r requirements.txt
+python app.py
 
-docker build -t dasha-demo .
-docker run -p 7860:7860 dasha-demo
+Конфиг в config.py
