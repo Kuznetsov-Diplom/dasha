@@ -33,3 +33,6 @@ error.log
 # Models - ignore old normalization if needed
 # models/audio_params/feature_mean.npy
 # models/audio_params/feature_std.npy
+
+data/
+*.mp3
