@@ -1,5 +1,3 @@
-# scripts/pipeline.py
-
 from pathlib import Path
 import numpy as np
 import librosa
@@ -91,13 +89,16 @@ class AudioPipeline:
         raw_26 = self.extract_raw_26(audio_path)
         normalized = self.normalizer.transform(raw_26)
 
-        # Для демо/визуализаций загружаем ещё раз (чтобы не дублировать код)
+        # Для демо/визуализаций загружаем ещё раз
         y, sr = librosa.load(str(audio_path), sr=self.SAMPLE_RATE, mono=True)
         y_pre = self._pre_emphasis(y)
         y_norm = y_pre / (np.max(np.abs(y_pre)) + 1e-8)
 
         frame_length = int(self.FRAME_LENGTH_MS * self.SAMPLE_RATE / 1000)
         hop_length = int(self.FRAME_SHIFT_MS * self.SAMPLE_RATE / 1000)
+
+        # VAD + Energy для визуализации
+        energy = librosa.feature.rms(y=y_norm, frame_length=frame_length, hop_length=hop_length)[0]
         vad_mask = self._vad_energy(y_norm, frame_length, hop_length)
 
         mfcc = librosa.feature.mfcc(
@@ -115,6 +116,7 @@ class AudioPipeline:
             "pre_emphasis_waveform": y_pre,
             "normalized_amplitude": y_norm,
             "vad_mask": vad_mask,
+            "energy": energy,                    # ← КРИТИЧНО ДЛЯ Gradio
             "mfcc": mfcc,
             "raw_26_vector": raw_26,
             "normalized_26_vector": normalized
