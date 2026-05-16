@@ -1,6 +1,7 @@
 import gradio as gr
 import numpy as np
 import plotly.graph_objects as go
+import random
 from pipeline import process_phrase
 from cv_ru_loader import load_speakers_and_phrases
 
@@ -27,15 +28,18 @@ def make_vector_bar(vec, title):
 
 def process_one_phrase(mode, speaker, phrase_idx, file):
     if mode == "Датасет":
-        if not speaker or phrase_idx is None: return "Выберите спикера и фразу", None, None, None, None
-        path = speakers[speaker]['phrases'][phrase_idx]['audio_path']
-        label = f"{speaker} — {speakers[speaker]['phrases'][phrase_idx]['sentence'][:50]}..."
+        if not speaker or phrase_idx is None:
+            return "Выберите спикера и фразу", None, None, None, None
+        path = speakers[speaker]['phrases'][int(phrase_idx)]['audio_path']
+        label = f"{speaker} — {speakers[speaker]['phrases'][int(phrase_idx)]['sentence'][:50]}..."
     else:
-        if file is None: return "Загрузите файл", None, None, None, None
+        if file is None:
+            return "Загрузите файл", None, None, None, None
         path = file.name
         label = file.name
     steps = get_step_by_step(path)
-    if "error" in steps: return steps["error"], None, None, None, None
+    if "error" in steps:
+        return steps["error"], None, None, None, None
     return (f"### ✅ {label}", make_waveform(steps['y_orig'], steps['sr'], "1. Исходный сигнал"), make_waveform(steps['y_vad'], steps['sr'], "2. После VAD"), make_mfcc_heatmap(steps['mfcc'], "3. MFCC спектрограмма"), make_vector_bar(steps['normalized_vector'], "4. Нормализованный вектор (26-dim)"))
 
 def process_correlation_tab(mode, speaker, num_phrases, files):
@@ -69,6 +73,9 @@ def process_correlation_tab(mode, speaker, num_phrases, files):
     fig2.update_layout(title="Нормализованные векторы [0, 1]", height=420, yaxis_range=[0, 1])
     return fig1, fig2, f"**Записей:** {len(vectors)} | **Средняя корреляция:** {np.mean(corr[np.triu(np.ones_like(corr), 1).astype(bool)]):.3f}"
 
+def get_random_speaker():
+    return random.choice(list(speakers.keys()))
+
 with gr.Blocks(title="Dasha — Система биометрической обработки речи", theme=gr.themes.Base()) as demo:
     gr.Markdown("# Dasha — Система биометрической обработки речи")
     with gr.Tabs():
@@ -79,6 +86,7 @@ with gr.Blocks(title="Dasha — Система биометрической об
                     mode1 = gr.Radio(["Датасет", "Мои файлы"], value="Датасет", label="Источник")
                     with gr.Group() as ds1:
                         sp1 = gr.Dropdown(list(speakers.keys()), label="Спикер")
+                        random_btn1 = gr.Button("🎲 Случайный спикер", size="sm")
                         ph1 = gr.Dropdown([], label="Фраза")
                     with gr.Group(visible=False) as fl1:
                         f1 = gr.File(label="Загрузите аудиофайл", file_types=[".wav", ".mp3"])
@@ -90,7 +98,8 @@ with gr.Blocks(title="Dasha — Система биометрической об
                     with gr.Accordion("3. MFCC спектрограмма", open=False): p3 = gr.Plot()
                     with gr.Accordion("4. Нормализованный вектор", open=False): p4 = gr.Plot()
             mode1.change(lambda m: (gr.update(visible=m=="Датасет"), gr.update(visible=m=="Мои файлы")), inputs=mode1, outputs=[ds1, fl1])
-            sp1.change(lambda s: gr.update(choices=[p['sentence'][:60] for p in speakers.get(s, {}).get('phrases', [])] if s in speakers else []), inputs=sp1, outputs=ph1)
+            random_btn1.click(get_random_speaker, outputs=sp1)
+            sp1.change(lambda s: gr.update(choices=[(p['sentence'][:60], str(i)) for i, p in enumerate(speakers.get(s, {}).get('phrases', []))] if s in speakers else []), inputs=sp1, outputs=ph1)
             btn1.click(process_one_phrase, [mode1, sp1, ph1, f1], [out_label, p1, p2, p3, p4])
         with gr.TabItem("2. Корреляция среди своих записей"):
             gr.Markdown("## Анализ нескольких записей + корреляция относительно среднего эталона")
@@ -99,6 +108,7 @@ with gr.Blocks(title="Dasha — Система биометрической об
                     mode2 = gr.Radio(["Датасет", "Мои файлы"], value="Мои файлы", label="Источник")
                     with gr.Group(visible=False) as ds2:
                         sp2 = gr.Dropdown(list(speakers.keys()), label="Спикер")
+                        random_btn2 = gr.Button("🎲 Случайный спикер", size="sm")
                         n2 = gr.Slider(3, 25, value=8, step=1, label="Количество фраз")
                     with gr.Group() as fl2:
                         f2 = gr.File(file_count="multiple", label="Загрузите несколько файлов", file_types=[".wav", ".mp3"])
@@ -108,6 +118,7 @@ with gr.Blocks(title="Dasha — Система биометрической об
                     heat = gr.Plot(label="Матрица корреляции")
                     lines = gr.Plot(label="Нормализованные векторы [0, 1]")
             mode2.change(lambda m: (gr.update(visible=m=="Датасет"), gr.update(visible=m=="Мои файлы")), inputs=mode2, outputs=[ds2, fl2])
+            random_btn2.click(get_random_speaker, outputs=sp2)
             btn2.click(process_correlation_tab, [mode2, sp2, n2, f2], [heat, lines, status])
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
