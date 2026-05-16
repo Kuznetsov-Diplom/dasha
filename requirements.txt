@@ -2,16 +2,15 @@
 # Python 3.10+ recommended
 # Install with: pip install -r requirements.txt
 
-gradio==4.44.1          # Stable Gradio 4.x (theme=Base() works reliably)
+gradio==4.44.1          # Stable Gradio 4.x
 numpy==1.26.4           # Core numerical
-plotly==5.24.1          # For interactive heatmaps and line plots
+plotly==5.24.1          # Interactive plots
 pandas==2.2.3           # Data handling
-librosa==0.10.2.post1   # Audio feature extraction (MFCC etc.)
-soundfile==0.12.1       # Audio file I/O
-scipy==1.14.1           # Scientific computing
-webrtcvad==2.0.10       # Voice activity detection (if used in pipeline)
-pydub==0.25.1           # Audio manipulation
-matplotlib==3.9.2       # Fallback plotting
-python-dotenv==1.0.1    # Environment variables
-
-# Note: Removed streamlit (not used in current app.py)
+librosa==0.10.2.post1   # MFCC extraction
+soundfile==0.12.1       # Audio I/O
+scipy==1.14.1           # Scientific
+webrtcvad==2.0.10       # VAD
+pydub==0.25.1           # Audio tools
+matplotlib==3.9.2       # Plots
+python-dotenv==1.0.1    # Env vars
+huggingface_hub==0.23.2 # CRITICAL: compatible with Gradio 4.44.1 (fixes HfFolder import)
