@@ -39,7 +39,6 @@ def create_interface():
 
         try:
             result = process_phrase(audio_path)
-            
             vector_text = "\n".join([f"{i+1:2d}. {v:.6f}" for i, v in enumerate(result["normalized_vector"])])
             
             return (
@@ -52,7 +51,8 @@ def create_interface():
         except Exception as e:
             return [None] * 4, f"❌ Ошибка обработки: {str(e)}"
 
-    with gr.Blocks(title="Dasha — Биометрия речи", theme=gr.themes.Soft()) as demo:
+    # Создаём интерфейс БЕЗ theme (для Gradio 6+)
+    with gr.Blocks(title="Dasha — Биометрия речи") as demo:
         gr.Markdown("# Dasha — Система биометрической обработки речи")
         gr.Markdown("**Одно окно** • Выберите спикера + фразу → обработка по алгоритму ГОСТ")
 
@@ -84,7 +84,12 @@ def create_interface():
                     
                     with gr.Column():
                         mfcc_plot = gr.Plot(label="3. MFCC")
-                        vector_output = gr.Textbox(label="4. Нормализованный вектор [0, 1]", lines=15, show_copy_button=True)
+                        # Исправлено под Gradio 6+: убрали show_copy_button
+                        vector_output = gr.Textbox(
+                            label="4. Нормализованный вектор [0, 1]",
+                            lines=15,
+                            interactive=False
+                        )
 
         # События
         speaker_dropdown.change(
@@ -110,4 +115,10 @@ def create_interface():
 
 if __name__ == "__main__":
     demo = create_interface()
-    demo.launch()
+    # Запуск с темой (для Gradio 6+)
+    demo.launch(
+        theme=gr.themes.Soft(),
+        server_name="127.0.0.1",
+        server_port=7860,
+        share=False
+    )
