@@ -1,5 +1,6 @@
 # pipeline.py
-# Финальная версия с CMVN + L2 нормализацией (исправлено: MinMax для графика ПЕРЕД L2)
+# Единая нормализация: CMVN + Mean pooling + MinMax [0,1]
+# (рекомендовано для voice biometrics + НПБК по ГОСТ)
 
 from pathlib import Path
 import numpy as np
@@ -45,26 +46,22 @@ class AudioPipeline:
 
         active = features_39[:, vad_mask] if np.any(vad_mask) else features_39
 
-        # ====================== CMVN + L2 (рекомендация №1) ======================
-        # CMVN: убираем среднее и дисперсию по каждому из 39 коэффициентов
+        # ====================== ЕДИНАЯ НОРМАЛИЗАЦИЯ ======================
+        # 1. CMVN (Cepstral Mean Variance Normalization) — убирает влияние микрофона/канала
         mean_per_dim = np.mean(active, axis=1, keepdims=True)
         std_per_dim = np.std(active, axis=1, keepdims=True) + 1e-8
         active_cmn = (active - mean_per_dim) / std_per_dim
 
-        # Mean pooling (это основа для обоих векторов)
+        # 2. Mean pooling → 39-мерный вектор
         mean_vec = np.mean(active_cmn, axis=1)
 
-        # Для графика: MinMax в [0,1] на CMVN-векторе (ДО L2) — теперь будет красивый разброс!
+        # 3. MinMax [0, 1] — финальная нормализация (одинаковая для графика и НПБК)
         min_v = np.min(mean_vec)
         max_v = np.max(mean_vec)
         if max_v - min_v < 1e-8:
-            plot_vec = np.full_like(mean_vec, 0.5)
+            normalized_vec = np.full_like(mean_vec, 0.5)
         else:
-            plot_vec = (mean_vec - min_v) / (max_v - min_v)
-
-        # L2-normalization только для реального вектора НПБК
-        norm = np.linalg.norm(mean_vec) + 1e-8
-        cmvn_l2_vec = mean_vec / norm
+            normalized_vec = (mean_vec - min_v) / (max_v - min_v)
 
         return {
             "y_orig": y,
@@ -73,8 +70,8 @@ class AudioPipeline:
             "vad_mask": vad_mask,
             "mfcc": mfcc,
             "features_39": features_39,
-            "normalized_vector": plot_vec.tolist(),   # красивый график с разбросом
-            "cmvn_vector": cmvn_l2_vec.tolist()          # настоящий сильный вектор для НПБК
+            "normalized_vector": normalized_vec.tolist(),   # для графика
+            "cmvn_vector": normalized_vec.tolist()            # для НПБК (один и тот же вектор!)
         }
 
 def process_phrase(audio_path: str) -> Dict[str, Any]:
@@ -89,7 +86,7 @@ def process_phrase(audio_path: str) -> Dict[str, Any]:
         "sr": data["sr"],
         "mfcc": data["mfcc"],
         "normalized_vector": data["normalized_vector"],
-        "cmvn_vector": data["cmvn_vector"]          # ← используй этот для НПБК!
+        "cmvn_vector": data["cmvn_vector"]   # теперь это один и тот же вектор
     }
 
 # ====================== ФУНКЦИИ ДЛЯ ВКЛАДКИ 4 ======================
