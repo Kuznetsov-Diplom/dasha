@@ -1,169 +1,176 @@
 import gradio as gr
-import os
 import numpy as np
-import plotly.graph_objects as go
+import random
+from pathlib import Path
 from dotenv import load_dotenv
+import plotly.graph_objects as go
 
 load_dotenv()
 
-from cv_ru_loader import load_speakers_and_phrases, get_random_speaker
-from pipeline import process_voice, extract_mfcc_features
-from feature_normalizer import FeatureNormalizer
-from npbk import NPBKConverter
+# === ИМПОРТЫ ===
+from cv_ru_loader import load_speakers_and_phrases
+from pipeline import process_phrase
 
-# Загрузка данных
 speakers = load_speakers_and_phrases()
+print(f"✅ Загружено {len(speakers)} спикеров из датасета")
 
-npbk = NPBKConverter()
+# Хранилище пользовательских файлов: [(original_name, full_path), ...]
+custom_files = []      # список кортежей
+custom_vectors = []    # список обработанных векторов
 
 def get_random_speaker():
-    if not speakers:
-        return None
-    return random.choice(list(speakers.keys()))
+    return random.choice(list(speakers.keys())) if speakers else None
 
-def process_voice(speaker_id, phrase_text):
-    if speaker_id not in speakers:
-        return None, "Спикер не найден"
-    speaker_data = speakers[speaker_id]
-    # Находим фразу
-    for item in speaker_data:
-        if item['text'] == phrase_text:
-            audio_path = item['audio_path']
-            steps = process_audio_file(audio_path)
-            waveform = steps['original']
-            pre_emphasis = steps['pre_emphasis']
-            mfcc_plot = steps.get('mfcc_plot', np.zeros(13))
-            normalized_vector = steps['normalized_vector']
-            return waveform, pre_emphasis, mfcc_plot, normalized_vector, "Обработка завершена успешно!"
-    return None, "Фраза не найдена"
-
-def plot_normalized_vector(vec):
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.bar(range(len(vec)), vec)
-    ax.set_title('Нормализованный вектор признаков [0, 1]')
-    ax.set_xlabel('Индекс признака')
-    ax.set_ylabel('Значение')
-    ax.grid(True)
-    return fig
-
-def correlation_own(speaker_id, num_phrases):
-    if speaker_id not in speakers:
-        return None, "Спикер не найден"
-    speaker_data = speakers[speaker_id]
-    if len(speaker_data) < num_phrases:
-        num_phrases = len(speaker_data)
-    selected = speaker_data[:num_phrases]
-    vectors = []
-    for item in selected:
-        steps = process_audio_file(item['audio_path'])
-        vec = steps['normalized_vector']
-        vectors.append(vec)
-    corr_matrix = np.corrcoef(vectors)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    im = ax.imshow(corr_matrix, cmap='viridis')
-    ax.set_title('Корреляция векторов "Свои"')
-    plt.colorbar(im)
-    return fig, f"Корреляция рассчитана для {num_phrases} фраз спикера {speaker_id}"
-
-# Основной интерфейс
-with gr.Blocks(title="Dasha — Система биометрической обработки речи", theme=gr.themes.Dark()) as demo:
-    gr.Markdown("# Dasha — Система биометрической обработки речи")
-    gr.Markdown("### Одно окно • Выберите спикера + фразу → обработка по алгоритму ГОСТ")
+def add_custom_files(files):
+    global custom_files
+    if not files:
+        return [[name] for name, _ in custom_files]
     
+    for file in files:
+        if file is None:
+            continue
+        original_name = Path(file.name).name if hasattr(file, 'name') else Path(str(file)).name
+        full_path = str(file.name) if hasattr(file, 'name') else str(file)
+        custom_files.append((original_name, full_path))
+    
+    return [[name] for name, _ in custom_files]
+
+def delete_custom_file(selected_row):
+    global custom_files, custom_vectors
+    if selected_row and len(selected_row) > 0:
+        filename = selected_row[0][0]
+        for i, (name, path) in enumerate(custom_files):
+            if name == filename:
+                del custom_files[i]
+                if i < len(custom_vectors):
+                    del custom_vectors[i]
+                break
+    return [[name] for name, _ in custom_files]
+
+def process_custom_files():
+    global custom_vectors
+    custom_vectors = []
+    success = 0
+    for name, path in custom_files:
+        try:
+            result = process_phrase(path)
+            vec = np.array(result["normalized_vector"])
+            custom_vectors.append(vec)
+            success += 1
+        except Exception as e:
+            print(f"Ошибка обработки {name}: {e}")
+    return f"✅ Успешно обработано {success} из {len(custom_files)} файлов"
+
+def correlation_own(speaker_id, num_phrases, mode):
+    global custom_vectors
+    vectors = []
+
+    # Датасет
+    if mode in ["Датасет", "Датасет + мои файлы"]:
+        if speaker_id in speakers:
+            speaker_data = speakers[speaker_id]['phrases']
+            selected = speaker_data[:int(num_phrases)]
+            for item in selected:
+                try:
+                    result = process_phrase(item['audio_path'])
+                    vectors.append(np.array(result["normalized_vector"]))
+                except:
+                    continue
+
+    # Пользовательские файлы
+    if mode in ["Мои файлы", "Датасет + мои файлы"]:
+        vectors.extend(custom_vectors)
+
+    if len(vectors) < 2:
+        return None, None, "❌ Недостаточно данных (минимум 2 вектора)"
+
+    vectors = np.array(vectors)
+    mean_vec = np.mean(vectors, axis=0)
+    corr_matrix = np.corrcoef(vectors)
+
+    # Корреляция с эталоном
+    corr_with_etalon = np.array([np.corrcoef(vectors[i], mean_vec)[0, 1] for i in range(len(vectors))])
+    extended_matrix = np.hstack([corr_matrix, corr_with_etalon.reshape(-1, 1)])
+
+    # Метрика
+    mask = np.triu(np.ones_like(corr_matrix), k=1).astype(bool)
+    avg_corr = float(np.mean(corr_matrix[mask])) if np.any(mask) else 0.0
+    stability = "Отличная" if avg_corr > 0.85 else "Хорошая" if avg_corr > 0.75 else "Средняя" if avg_corr > 0.65 else "Низкая"
+
+    # Heatmap
+    labels = [f"Запись {i+1}" for i in range(len(vectors))] + ["Эталон"]
+    fig_heat = go.Figure(data=go.Heatmap(
+        z=extended_matrix,
+        x=labels,
+        y=labels[:-1],
+        colorscale='RdYlBu_r',
+        text=np.round(extended_matrix, 3),
+        texttemplate="%{text}",
+    ))
+    fig_heat.update_layout(
+        title=f'Корреляция + сравнение с эталоном ({len(vectors)} записей)',
+        height=650,
+        xaxis_title="Запись / Эталон",
+        yaxis_title="Запись"
+    )
+
+    # Line plot
+    fig_lines = go.Figure()
+    for i, vec in enumerate(vectors):
+        fig_lines.add_trace(go.Scatter(x=list(range(26)), y=vec, mode='lines', name=f'Запись {i+1}', opacity=0.75))
+    fig_lines.add_trace(go.Scatter(x=list(range(26)), y=mean_vec, mode='lines', name='Средний вектор (эталон)', line=dict(color='black', width=4)))
+    fig_lines.update_layout(
+        title="Нормализованные векторы + средний вектор",
+        xaxis_title="Индекс признака (0-25)",
+        yaxis_title="Значение [0, 1]",
+        height=500,
+        legend_title="Записи"
+    )
+
+    status = f"""
+    ✅ **Анализ завершён** ({len(vectors)} записей)  
+    **Средняя корреляция:** {avg_corr:.3f}  
+    **Стабильность:** {stability}
+    """
+    return fig_heat, fig_lines, status
+
+# ==================== ИНТЕРФЕЙС ====================
+with gr.Blocks(title="Dasha — Система биометрической обработки речи", theme=gr.themes.Base()) as demo:
+    gr.Markdown("# Dasha — Система биометрической обработки речи")
+
     with gr.Tabs():
-        # Вкладка 1
-        with gr.Tab("1. Обработка голоса"):
-            with gr.Row():
-                gr.Button("🎲 Выбрать случайного спикера", variant="primary").click(
-                    lambda: gr.update(value=get_random_speaker()), inputs=None, outputs=gr.Dropdown()
-                )
-            speaker_dropdown = gr.Dropdown(choices=list(speakers.keys()), label="Спикер", value=list(speakers.keys())[0] if speakers else None)
-            
-            phrase_dropdown = gr.Dropdown(label="Фраза", choices=[], interactive=True)
-            
-            audio_player = gr.Audio(label="Прослушать аудио", type="numpy")
-            
-            process_btn = gr.Button("🔬 Обработать фразу", variant="primary", size="large")
-            
-            status = gr.Markdown()
-            
-            with gr.Row():
-                with gr.Column():
-                
-                    gr.Markdown("**1. Оригинальный waveform**")
-                    orig_wave = gr.Plot()
-                with gr.Column():
-                    gr.Markdown("**2. После Pre-emphasis**")
-                    pre_wave = gr.Plot()
-            
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown("**3. MFCC**")
-                    mfcc_plot = gr.Plot()
-                with gr.Column():
-                    gr.Markdown("**4. Нормализованный вектор [0,1]**")
-                    norm_plot = gr.Plot()
-        
-        # Вкладка 2
         with gr.Tab("2. Обнаружение корреляции среди своих"):
             with gr.Row():
-                gr.Button("🎲 Случайный спикер", variant="primary").click(
-                    lambda: gr.update(value=get_random_speaker()), inputs=None, outputs=gr.Dropdown()
-                )
-            speaker2 = gr.Dropdown(choices=list(speakers.keys()), label="Спикер", value=list(speakers.keys())[0] if speakers else None)
-            num_phrases_slider = gr.Slider(minimum=2, maximum=20, value=5, step=1, label="Количество фраз для анализа")
-            corr_btn = gr.Button("📊 Вычислить корреляцию", variant="primary")
+                random_btn = gr.Button("🎲 Случайный спикер из датасета", variant="primary")
+                mode_radio = gr.Radio(["Датасет", "Мои файлы", "Датасет + мои файлы"], value="Мои файлы", label="Что анализировать")
+
+            speaker_dropdown = gr.Dropdown(choices=list(speakers.keys()), label="Спикер из датасета")
+            num_phrases_slider = gr.Slider(2, 50, 10, step=1, label="Количество фраз из датасета")
+
+            with gr.Group():
+                gr.Markdown("### Загрузить свои аудиофайлы")
+                file_uploader = gr.File(label="Выберите аудиофайлы (.wav, .mp3, .adts и др.)", file_count="multiple", type="filepath")
+                upload_btn = gr.Button("➕ Добавить файлы", variant="secondary")
+                process_custom_btn = gr.Button("🔬 Обработать загруженные файлы", variant="primary")
+
+            custom_list = gr.Dataframe(headers=["Файл"], value=[], label="Загруженные файлы")
+            delete_btn = gr.Button("🗑 Удалить выбранный файл")
+
+            corr_btn = gr.Button("📊 Вычислить корреляцию", variant="primary", size="large")
             corr_status = gr.Markdown()
             corr_heatmap = gr.Plot()
-        
-        # Остальные вкладки (пока пустые)
-        with gr.Tab("3. Обнаружение корреляции с чужими"):
-            gr.Markdown("### Скоро: сравнение \"Свой\" vs \"Чужой\"")
-        with gr.Tab("4. Регистрация данных в НБК"):
-            gr.Markdown("### Регистрация спикера в Нейросетевом Преобразователе Биометрия-Код")
-            reg_btn = gr.Button("Зарегистрировать спикера в НБК")
-        with gr.Tab("5. Восстановление ключа в НПБК"):
-            gr.Markdown("### Восстановление криптографического ключа")
-            key_btn = gr.Button("Сгенерировать / Восстановить ключ")
-        with gr.Tab("6. Корреляция ответов НПБК (ошибки 1 и 2 рода)"):
-            gr.Markdown("### Анализ FAR / FRR и корреляций выходов НПБК")
-        with gr.Tab("7. Эксперименты"):
-            gr.Markdown("### Эксперименты, тесты производительности, длина ключа и т.д.")
-    
-    # Логика обновления списка фраз
-    def update_phrases(speaker_id):
-        if speaker_id and speaker_id in speakers:
-            phrases = [item['text'] for item in speakers[speaker_id]]
-            return gr.update(choices=phrases, value=phrases[0] if phrases else None)
-        return gr.update(choices=[])
-    
-    speaker_dropdown.change(update_phrases, inputs=speaker_dropdown, outputs=phrase_dropdown)
-    
-    # Обработка голоса
-    def on_process(speaker_id, phrase):
-        waveform, pre_emphasis, mfcc_p, norm_vec, msg = process_voice(speaker_id, phrase)
-        if waveform is None:
-            return None, None, None, None, msg
-        orig_fig = plt.figure()
-        plt.plot(waveform[0])
-        plt.title("Оригинальный waveform")
-        pre_fig = plt.figure()
-        plt.plot(pre_emphasis[0])
-        plt.title("После Pre-emphasis")
-        norm_fig = plot_normalized_vector(norm_vec)
-        return orig_fig, pre_fig, None, norm_fig, msg
-    
-    process_btn.click(
-        on_process,
-        inputs=[speaker_dropdown, phrase_dropdown],
-        outputs=[orig_wave, pre_wave, mfcc_plot, norm_plot, status]
-    )
-    
-    # Корреляция среди своих
+            lines_plot = gr.Plot()
+
+    # События
+    random_btn.click(get_random_speaker, outputs=speaker_dropdown)
+    upload_btn.click(add_custom_files, inputs=file_uploader, outputs=custom_list)
+    process_custom_btn.click(process_custom_files, outputs=corr_status)
+    delete_btn.click(delete_custom_file, inputs=custom_list, outputs=custom_list)
+
     corr_btn.click(
         correlation_own,
-        inputs=[speaker2, num_phrases_slider],
-        outputs=[corr_heatmap, corr_status]
+        inputs=[speaker_dropdown, num_phrases_slider, mode_radio],
+        outputs=[corr_heatmap, lines_plot, corr_status]
     )
 
 if __name__ == "__main__":
