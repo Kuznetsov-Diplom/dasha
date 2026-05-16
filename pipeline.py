@@ -1,5 +1,5 @@
 # pipeline.py
-# Финальная версия с CMVN + L2 нормализацией (рекомендация №1)
+# Финальная версия с CMVN + L2 нормализацией (исправлено: MinMax для графика ПЕРЕД L2)
 
 from pathlib import Path
 import numpy as np
@@ -46,25 +46,25 @@ class AudioPipeline:
         active = features_39[:, vad_mask] if np.any(vad_mask) else features_39
 
         # ====================== CMVN + L2 (рекомендация №1) ======================
-        # CMVN: убираем среднее и дисперсию по каждому из 39 коэффициентов внутри записи
+        # CMVN: убираем среднее и дисперсию по каждому из 39 коэффициентов
         mean_per_dim = np.mean(active, axis=1, keepdims=True)
         std_per_dim = np.std(active, axis=1, keepdims=True) + 1e-8
         active_cmn = (active - mean_per_dim) / std_per_dim
 
-        # Mean pooling
+        # Mean pooling (это основа для обоих векторов)
         mean_vec = np.mean(active_cmn, axis=1)
 
-        # L2-normalization (Length Normalization)
-        norm = np.linalg.norm(mean_vec) + 1e-8
-        mean_vec = mean_vec / norm
-
-        # Для красивого графика в Gradio — MinMax в [0,1]
+        # Для графика: MinMax в [0,1] на CMVN-векторе (ДО L2) — теперь будет красивый разброс!
         min_v = np.min(mean_vec)
         max_v = np.max(mean_vec)
         if max_v - min_v < 1e-8:
             plot_vec = np.full_like(mean_vec, 0.5)
         else:
             plot_vec = (mean_vec - min_v) / (max_v - min_v)
+
+        # L2-normalization только для реального вектора НПБК
+        norm = np.linalg.norm(mean_vec) + 1e-8
+        cmvn_l2_vec = mean_vec / norm
 
         return {
             "y_orig": y,
@@ -73,8 +73,8 @@ class AudioPipeline:
             "vad_mask": vad_mask,
             "mfcc": mfcc,
             "features_39": features_39,
-            "normalized_vector": plot_vec.tolist(),   # для графиков [0,1]
-            "cmvn_vector": mean_vec.tolist()          # настоящий вектор для НПБК
+            "normalized_vector": plot_vec.tolist(),   # красивый график с разбросом
+            "cmvn_vector": cmvn_l2_vec.tolist()          # настоящий сильный вектор для НПБК
         }
 
 def process_phrase(audio_path: str) -> Dict[str, Any]:
@@ -106,7 +106,7 @@ def ensure_normalizer_trained():
     for sp in list(speakers.keys())[:80]:
         for item in speakers[sp]['phrases'][:8]:
             try:
-                vec = pipeline.extract_features(item['audio_path'])['cmvn_vector']  # используем cmvn
+                vec = pipeline.extract_features(item['audio_path'])['cmvn_vector']
                 all_vectors.append(vec)
             except:
                 continue
