@@ -1,5 +1,5 @@
 # pipeline.py
-# Финальная упрощённая версия без внешней нормализации (только 39 признаков)
+# Финальная версия с автообучением + ручным переобучением
 
 from pathlib import Path
 import numpy as np
@@ -49,7 +49,6 @@ class AudioPipeline:
         features = self._extract_mfcc_full(y)
         active = features[:, vad_mask] if np.any(vad_mask) else features
 
-        # Простая нормализация внутри (MinMax по признакам)
         min_val = np.min(active, axis=1, keepdims=True)
         max_val = np.max(active, axis=1, keepdims=True) + 1e-8
         normalized = (active - min_val) / (max_val - min_val)
@@ -104,14 +103,12 @@ def process_phrase(audio_path: str) -> Dict[str, Any]:
         "normalized_vector": normalized_39.tolist()
     }
 
-# ====================== АВТООБУЧЕНИЕ НОРМАЛИЗАТОРА ======================
+# ====================== АВТООБУЧЕНИЕ ======================
 def ensure_normalizer_trained():
-    """Проверяет наличие нормализатора и обучает его при необходимости"""
     params_path = Path("models/audio_params/normalizer_params.json")
     if params_path.exists():
         return True, "Нормализатор уже существует"
 
-    # Обучаем автоматически
     from cv_ru_loader import load_speakers_and_phrases
     speakers = load_speakers_and_phrases()
     pipeline = AudioPipeline()
@@ -128,7 +125,6 @@ def ensure_normalizer_trained():
     if len(all_vectors) < 30:
         return False, "Недостаточно данных для обучения"
 
-    # Сохраняем простые параметры (для совместимости)
     params = {
         "min_val": [0.0] * 39,
         "max_val": [1.0] * 39,
@@ -140,3 +136,39 @@ def ensure_normalizer_trained():
         json.dump(params, f)
 
     return True, f"Автоматически создан нормализатор на {len(all_vectors)} векторах"
+
+# ====================== РУЧНОЕ ПЕРЕОБУЧЕНИЕ ======================
+def retrain_normalizer(max_speakers: int = 100, phrases_per_speaker: int = 8):
+    from cv_ru_loader import load_speakers_and_phrases
+    import json
+
+    speakers = load_speakers_and_phrases()
+    pipeline = AudioPipeline()
+    all_vectors = []
+
+    speaker_list = list(speakers.keys())[:max_speakers]
+
+    for sp in speaker_list:
+        for item in speakers[sp]['phrases'][:phrases_per_speaker]:
+            try:
+                vec = pipeline.extract_raw_39(item['audio_path'])
+                all_vectors.append(vec)
+            except:
+                continue
+
+    if len(all_vectors) < 50:
+        return False, f"Слишком мало данных ({len(all_vectors)} векторов)"
+
+    all_vectors = np.array(all_vectors)
+
+    params = {
+        "min_val": [0.0] * 39,
+        "max_val": [1.0] * 39,
+        "feature_dim": 39
+    }
+    params_path = Path("models/audio_params/normalizer_params.json")
+    params_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(params_path, "w") as f:
+        json.dump(params, f)
+
+    return True, f"Нормализатор успешно переобучен на {len(all_vectors)} векторах (39 признаков)"
