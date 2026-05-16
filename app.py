@@ -8,36 +8,42 @@ from cv_ru_loader import load_speakers_and_phrases
 speakers = load_speakers_and_phrases()
 
 # ====================== STATE ======================
-custom_files_state = gr.State([])      # [(name, path), ...]
-custom_vectors_state = gr.State([])    # [np.array, ...]
+custom_files_state = gr.State([])      # list of (name, path)
+custom_vectors_state = gr.State([])    # list of np.array (26-dim)
 
 def add_custom_files(files, current_files, current_vectors):
-    new_files = current_files.copy()
-    new_vectors = current_vectors.copy()
+    """Сразу обрабатывает через process_phrase и добавляет в список"""
+    new_files = current_files.copy() if current_files else []
+    new_vectors = current_vectors.copy() if current_vectors else []
 
+    processed = 0
     for f in files or []:
-        name = Path(f.name).name
-        path = str(f.name)
-        new_files.append((name, path))
-        
         try:
+            name = Path(getattr(f, 'name', str(f))).name
+            path = str(getattr(f, 'name', f))
+            
             result = process_phrase(path)
-            vec = np.array(result['normalized_vector'])
+            vec = np.array(result['normalized_vector'], dtype=np.float32).copy()  # ← независимая копия!
+            
+            new_files.append((name, path))
             new_vectors.append(vec)
+            processed += 1
             print(f'✅ Обработан {name} | norm = {np.linalg.norm(vec):.4f}')
         except Exception as e:
             print(f'❌ Ошибка {name}: {e}')
+            continue
 
-    return [[n for n, _ in new_files]], new_files, new_vectors
+    return [[n for n, _ in new_files]], new_files, new_vectors, f'✅ Добавлено {processed} файлов. Всего: {len(new_files)}'
 
 def delete_custom_file(selected_idx, current_files, current_vectors):
     if not selected_idx or not current_files:
-        return current_files, current_vectors
+        return current_files, current_vectors, []
     idx = selected_idx[0][0] if isinstance(selected_idx[0], list) else selected_idx[0]
-    del current_files[idx]
-    if idx < len(current_vectors):
-        del current_vectors[idx]
-    return [[n for n, _ in current_files]], current_files, current_vectors
+    if 0 <= idx < len(current_files):
+        del current_files[idx]
+        if idx < len(current_vectors):
+            del current_vectors[idx]
+    return [[n for n, _ in current_files]], current_files, current_vectors, 'Данные удалены'
 
 def update_visibility(mode):
     dataset_visible = mode == "Датасет"
@@ -61,12 +67,13 @@ def correlation_own(speaker_id, num_phrases, mode, custom_files, custom_vectors)
             for item in data:
                 try:
                     result = process_phrase(item['audio_path'])
-                    vectors.append(np.array(result['normalized_vector']))
+                    vectors.append(np.array(result['normalized_vector'], dtype=np.float32).copy())
                     labels.append(item['sentence'][:30] + "...")
                 except:
                     continue
     else:
-        vectors = [np.array(v) for v in custom_vectors]
+        # Мои файлы - используем сохранённые векторы
+        vectors = [np.array(v, dtype=np.float32).copy() for v in custom_vectors]
         labels = [name for name, _ in custom_files]
 
     if len(vectors) < 2:
@@ -104,6 +111,12 @@ def correlation_own(speaker_id, num_phrases, mode, custom_files, custom_vectors)
     status = f"**Средняя корреляция:** {avg_corr:.3f}<br>**Стабильность:** {stability}"
     return fig_heat, fig_lines, status
 
+def auto_correlation(mode, custom_files, custom_vectors):
+    """Автоматический расчёт при изменении списка файлов (без отдельной кнопки)"""
+    if mode != "Мои файлы" or len(custom_vectors) < 2:
+        return None, None, "Добавьте минимум 2 файла в режиме \"Мои файлы\""
+    return correlation_own(None, 0, mode, custom_files, custom_vectors)
+
 with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Dark()) as demo:
     gr.Markdown("# Dasha — Система биометрической обработки речи")
 
@@ -111,33 +124,47 @@ with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Dark()) as 
         with gr.Tab("2. Обнаружение корреляции среди своих"):
             with gr.Row():
                 with gr.Column(scale=1):
-                    mode2 = gr.Radio(["Датасет", "Мои файлы"], value="Мои файлы", label="Что анализировать")
+                    mode2 = gr.Radio(["Датасет", "Мои файлы"], value="Мои файлы", label="Режим")
 
                     speaker2 = gr.Dropdown(choices=list(speakers.keys()), label="Спикер", visible=False)
                     num_phrases2 = gr.Slider(2, 50, value=10, step=1, label="Количество фраз", visible=False)
 
                     gr.Markdown("### Загрузить свои файлы")
-                    file_uploader = gr.File(file_count="multiple", label="Выберите аудиофайлы")
-                    upload_btn = gr.Button("➕ Добавить файлы", variant="secondary")
+                    file_uploader = gr.File(file_count="multiple", label="Выберите аудиофайлы (.wav, .mp3)")
+                    upload_btn = gr.Button("➕ Добавить файлы", variant="primary")
                     
                     custom_list = gr.Dataframe(headers=["Файл"], value=[], label="Загруженные файлы", interactive=True)
                     delete_btn = gr.Button("🗑 Удалить выбранный", variant="stop")
 
-                    gr.Markdown("---")
-                    corr_btn = gr.Button("📊 Вычислить корреляцию", variant="primary", size="large")
+                    status_box = gr.Textbox(label="Статус", interactive=False)
 
                 with gr.Column(scale=2):
                     corr_status = gr.Markdown("### Результат появится здесь")
                     corr_heatmap = gr.Plot()
                     lines_plot = gr.Plot()
 
+    # Визибилити
     mode2.change(update_visibility, inputs=mode2, outputs=[speaker2, num_phrases2, file_uploader, upload_btn, custom_list, delete_btn])
 
-    upload_btn.click(add_custom_files, inputs=[file_uploader, custom_files_state, custom_vectors_state], outputs=[custom_list, custom_files_state, custom_vectors_state])
+    # Главное исправление: кнопка сразу обрабатывает и добавляет
+    upload_btn.click(
+        fn=add_custom_files,
+        inputs=[file_uploader, custom_files_state, custom_vectors_state],
+        outputs=[custom_list, custom_files_state, custom_vectors_state, status_box]
+    )
 
-    delete_btn.click(delete_custom_file, inputs=[custom_list, custom_files_state, custom_vectors_state], outputs=[custom_list, custom_files_state, custom_vectors_state])
+    # Автоматический пересчёт корреляции при изменении списка
+    custom_vectors_state.change(
+        fn=auto_correlation,
+        inputs=[mode2, custom_files_state, custom_vectors_state],
+        outputs=[corr_heatmap, lines_plot, corr_status]
+    )
 
-    corr_btn.click(correlation_own, inputs=[speaker2, num_phrases2, mode2, custom_files_state, custom_vectors_state], outputs=[corr_heatmap, lines_plot, corr_status])
+    delete_btn.click(
+        fn=delete_custom_file,
+        inputs=[custom_list, custom_files_state, custom_vectors_state],
+        outputs=[custom_list, custom_files_state, custom_vectors_state, status_box]
+    )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
