@@ -1,5 +1,5 @@
 # pipeline.py
-# Чистая финальная версия
+# Полная версия с нормализацией (39 признаков)
 
 from pathlib import Path
 import numpy as np
@@ -29,26 +29,26 @@ class AudioPipeline:
     def extract_features(self, audio_path: str) -> Dict:
         y, sr = librosa.load(audio_path, sr=self.SAMPLE_RATE, mono=True)
 
-        # Pre-emphasis
         y_pre = self._pre_emphasis(y)
 
-        # VAD
         frame_length = int(self.FRAME_LENGTH_MS * sr / 1000)
         hop_length = int(self.FRAME_SHIFT_MS * sr / 1000)
         vad_mask = self._vad_energy(y_pre, frame_length, hop_length)
 
-        # MFCC + Delta + Delta-Delta (39 признаков)
         mfcc = librosa.feature.mfcc(y=y_pre, sr=sr, n_mfcc=self.N_MFCC,
-                                    n_fft=frame_length, hop_length=hop_length, window="hamming")
+                                    n_fft=frame_length, hop_length=hop_length, window="hamming
         delta = librosa.feature.delta(mfcc, order=1)
         delta2 = librosa.feature.delta(mfcc, order=2)
         features_39 = np.vstack([mfcc, delta, delta2])
 
-        # Активные кадры
         active = features_39[:, vad_mask] if np.any(vad_mask) else features_39
 
-        # Средний вектор (39-dim)
-        mean_vec = np.mean(active, axis=1)
+        # Нормализация (MinMax по признакам)
+        min_val = np.min(active, axis=1, keepdims=True)
+        max_val = np.max(active, axis=1, keepdims=True) + 1e-8
+        normalized = (active - min_val) / (max_val - min_val)
+
+        mean_vec = np.mean(normalized, axis=1)
 
         return {
             "y_orig": y,
