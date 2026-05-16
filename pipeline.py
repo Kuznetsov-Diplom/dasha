@@ -1,5 +1,5 @@
 # pipeline.py
-# Финальная версия без дополнительной нормализации (только 39 признаков)
+# Финальная версия без дополнительной нормализации + функции для UI
 
 from pathlib import Path
 import numpy as np
@@ -45,7 +45,6 @@ class AudioPipeline:
 
         active = features_39[:, vad_mask] if np.any(vad_mask) else features_39
 
-        # БЕЗ дополнительной нормализации
         mean_vec = np.mean(active, axis=1)
 
         return {
@@ -71,3 +70,72 @@ def process_phrase(audio_path: str) -> Dict[str, Any]:
         "mfcc": data["mfcc"],
         "normalized_vector": data["normalized_vector"].tolist()
     }
+
+# ====================== ФУНКЦИИ ДЛЯ ВКЛАДКИ 4 ======================
+def ensure_normalizer_trained():
+    params_path = Path("models/audio_params/normalizer_params.json")
+    if params_path.exists():
+        return True, "Нормализатор уже существует"
+
+    from cv_ru_loader import load_speakers_and_phrases
+    speakers = load_speakers_and_phrases()
+    pipeline = AudioPipeline()
+    all_vectors = []
+
+    for sp in list(speakers.keys())[:80]:
+        for item in speakers[sp]['phrases'][:8]:
+            try:
+                vec = pipeline.extract_features(item['audio_path'])['normalized_vector']
+                all_vectors.append(vec)
+            except:
+                continue
+
+    if len(all_vectors) < 30:
+        return False, "Недостаточно данных для обучения"
+
+    params = {
+        "min_val": [0.0] * 39,
+        "max_val": [1.0] * 39,
+        "feature_dim": 39
+    }
+    import json
+    params_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(params_path, "w") as f:
+        json.dump(params, f)
+
+    return True, f"Автоматически создан нормализатор на {len(all_vectors)} векторах"
+
+def retrain_normalizer(max_speakers: int = 100, phrases_per_speaker: int = 8):
+    from cv_ru_loader import load_speakers_and_phrases
+    import json
+
+    speakers = load_speakers_and_phrases()
+    pipeline = AudioPipeline()
+    all_vectors = []
+
+    speaker_list = list(speakers.keys())[:max_speakers]
+
+    for sp in speaker_list:
+        for item in speakers[sp]['phrases'][:phrases_per_speaker]:
+            try:
+                vec = pipeline.extract_features(item['audio_path'])['normalized_vector']
+                all_vectors.append(vec)
+            except:
+                continue
+
+    if len(all_vectors) < 50:
+        return False, f"Слишком мало данных ({len(all_vectors)} векторов)"
+
+    all_vectors = np.array(all_vectors)
+
+    params = {
+        "min_val": [0.0] * 39,
+        "max_val": [1.0] * 39,
+        "feature_dim": 39
+    }
+    params_path = Path("models/audio_params/normalizer_params.json")
+    params_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(params_path, "w") as f:
+        json.dump(params, f)
+
+    return True, f"Нормализатор успешно переобучен на {len(all_vectors)} векторах (39 признаков)"
