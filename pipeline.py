@@ -1,5 +1,5 @@
 # pipeline.py
-# Финальная версия без дополнительной нормализации + функции для UI
+# Финальная версия с CMVN + L2 нормализацией (рекомендация №1)
 
 from pathlib import Path
 import numpy as np
@@ -45,7 +45,26 @@ class AudioPipeline:
 
         active = features_39[:, vad_mask] if np.any(vad_mask) else features_39
 
-        mean_vec = np.mean(active, axis=1)
+        # ====================== CMVN + L2 (рекомендация №1) ======================
+        # CMVN: убираем среднее и дисперсию по каждому из 39 коэффициентов внутри записи
+        mean_per_dim = np.mean(active, axis=1, keepdims=True)
+        std_per_dim = np.std(active, axis=1, keepdims=True) + 1e-8
+        active_cmn = (active - mean_per_dim) / std_per_dim
+
+        # Mean pooling
+        mean_vec = np.mean(active_cmn, axis=1)
+
+        # L2-normalization (Length Normalization)
+        norm = np.linalg.norm(mean_vec) + 1e-8
+        mean_vec = mean_vec / norm
+
+        # Для красивого графика в Gradio — MinMax в [0,1]
+        min_v = np.min(mean_vec)
+        max_v = np.max(mean_vec)
+        if max_v - min_v < 1e-8:
+            plot_vec = np.full_like(mean_vec, 0.5)
+        else:
+            plot_vec = (mean_vec - min_v) / (max_v - min_v)
 
         return {
             "y_orig": y,
@@ -54,7 +73,8 @@ class AudioPipeline:
             "vad_mask": vad_mask,
             "mfcc": mfcc,
             "features_39": features_39,
-            "normalized_vector": mean_vec
+            "normalized_vector": plot_vec.tolist(),   # для графиков [0,1]
+            "cmvn_vector": mean_vec.tolist()          # настоящий вектор для НПБК
         }
 
 def process_phrase(audio_path: str) -> Dict[str, Any]:
@@ -68,7 +88,8 @@ def process_phrase(audio_path: str) -> Dict[str, Any]:
         "y_orig": data["y_orig"],
         "sr": data["sr"],
         "mfcc": data["mfcc"],
-        "normalized_vector": data["normalized_vector"].tolist()
+        "normalized_vector": data["normalized_vector"],
+        "cmvn_vector": data["cmvn_vector"]          # ← используй этот для НПБК!
     }
 
 # ====================== ФУНКЦИИ ДЛЯ ВКЛАДКИ 4 ======================
@@ -85,7 +106,7 @@ def ensure_normalizer_trained():
     for sp in list(speakers.keys())[:80]:
         for item in speakers[sp]['phrases'][:8]:
             try:
-                vec = pipeline.extract_features(item['audio_path'])['normalized_vector']
+                vec = pipeline.extract_features(item['audio_path'])['cmvn_vector']  # используем cmvn
                 all_vectors.append(vec)
             except:
                 continue
@@ -118,7 +139,7 @@ def retrain_normalizer(max_speakers: int = 100, phrases_per_speaker: int = 8):
     for sp in speaker_list:
         for item in speakers[sp]['phrases'][:phrases_per_speaker]:
             try:
-                vec = pipeline.extract_features(item['audio_path'])['normalized_vector']
+                vec = pipeline.extract_features(item['audio_path'])['cmvn_vector']
                 all_vectors.append(vec)
             except:
                 continue
