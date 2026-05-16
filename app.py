@@ -3,12 +3,12 @@ import numpy as np
 import plotly.graph_objects as go
 import random
 import os
-from pipeline import process_phrase
+from pipeline import process_phrase, retrain_normalizer
 from cv_ru_loader import load_speakers_and_phrases
 
 speakers = load_speakers_and_phrases()
 
-N_FEATURES = 39  # 39-мерные признаки (MFCC + Delta + Delta-Delta)
+N_FEATURES = 39
 
 def get_audio_info(audio_path):
     import soundfile as sf
@@ -111,6 +111,13 @@ def process_gost_test(num_speakers, phrases_per_speaker):
     status = f"**Спикеров:** {len(selected)} | **Фраз:** {len(all_vectors)}<br>**Средний RMS:** {np.mean(list(speaker_rms.values())):.4f}<br>{rms_text}"
     return fig_heat, fig_lines, status, speaker_rms
 
+def train_normalizer(max_sp, phrases):
+    success, message = retrain_normalizer(max_sp, phrases)
+    if success:
+        return f"✅ {message}"
+    else:
+        return f"❌ {message}"
+
 with gr.Blocks(title="Dasha — Система биометрической обработки речи", theme=gr.themes.Base()) as demo:
     gr.Markdown("# Dasha — Система биометрической обработки речи")
     with gr.Tabs():
@@ -166,5 +173,16 @@ with gr.Blocks(title="Dasha — Система биометрической об
                     heat3 = gr.Plot()
                     lines3 = gr.Plot()
             btn3.click(process_gost_test, [num_sp, ph_per], [heat3, lines3, status3])
+        with gr.TabItem("4. Обучение нормализатора"):
+            gr.Markdown("## Переобучение нормализатора на 39-мерных признаках")
+            gr.Markdown("Нажмите кнопку ниже, чтобы переобучить нормализатор на новых 39-мерных признаках (MFCC + Delta + Delta-Delta). Это улучшит качество аутентификации.")
+            with gr.Row():
+                with gr.Column(scale=1):
+                    max_sp = gr.Slider(20, 200, value=80, step=10, label="Максимум спикеров")
+                    ph_per_sp = gr.Slider(5, 15, value=8, step=1, label="Фраз на спикера")
+                    train_btn = gr.Button("🔄 Переобучить нормализатор", variant="primary", size="lg")
+                with gr.Column(scale=2):
+                    train_status = gr.Markdown()
+            train_btn.click(train_normalizer, [max_sp, ph_per_sp], train_status)
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
