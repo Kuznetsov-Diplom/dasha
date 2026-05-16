@@ -1,18 +1,18 @@
 import gradio as gr
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy import signal
 import os
+import numpy as np
+import plotly.graph_objects as go
 from dotenv import load_dotenv
-from cv_ru_loader import load_speaker_data
-from pipeline import process_audio_file
-from npbk import NPBKConverter
-import random
 
 load_dotenv()
 
+from cv_ru_loader import load_speakers_and_phrases, get_random_speaker
+from pipeline import process_voice, extract_mfcc_features
+from feature_normalizer import FeatureNormalizer
+from npbk import NPBKConverter
+
 # Загрузка данных
-speakers = load_speaker_data()
+speakers = load_speakers_and_phrases()
 
 npbk = NPBKConverter()
 
@@ -89,6 +89,7 @@ with gr.Blocks(title="Dasha — Система биометрической об
             
             with gr.Row():
                 with gr.Column():
+                
                     gr.Markdown("**1. Оригинальный waveform**")
                     orig_wave = gr.Plot()
                 with gr.Column():
@@ -117,7 +118,7 @@ with gr.Blocks(title="Dasha — Система биометрической об
         
         # Остальные вкладки (пока пустые)
         with gr.Tab("3. Обнаружение корреляции с чужими"):
-            gr.Markdown("### Скоро: сравнение "Свой" vs "Чужой"")
+            gr.Markdown("### Скоро: сравнение \"Свой\" vs \"Чужой\"")
         with gr.Tab("4. Регистрация данных в НБК"):
             gr.Markdown("### Регистрация спикера в Нейросетевом Преобразователе Биометрия-Код")
             reg_btn = gr.Button("Зарегистрировать спикера в НБК")
