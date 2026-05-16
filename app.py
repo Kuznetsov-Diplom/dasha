@@ -23,7 +23,7 @@ def add_custom_files(files, current_files, current_vectors):
             path = str(getattr(f, 'name', f))
             
             result = process_phrase(path)
-            vec = np.array(result['normalized_vector'], dtype=np.float32).copy()  # ← независимая копия!
+            vec = np.array(result['normalized_vector'], dtype=np.float32).copy()
             
             new_files.append((name, path))
             new_vectors.append(vec)
@@ -72,7 +72,6 @@ def correlation_own(speaker_id, num_phrases, mode, custom_files, custom_vectors)
                 except:
                     continue
     else:
-        # Мои файлы - используем сохранённые векторы
         vectors = [np.array(v, dtype=np.float32).copy() for v in custom_vectors]
         labels = [name for name, _ in custom_files]
 
@@ -112,7 +111,6 @@ def correlation_own(speaker_id, num_phrases, mode, custom_files, custom_vectors)
     return fig_heat, fig_lines, status
 
 def auto_correlation(mode, custom_files, custom_vectors):
-    """Автоматический расчёт при изменении списка файлов (без отдельной кнопки)"""
     if mode != "Мои файлы" or len(custom_vectors) < 2:
         return None, None, "Добавьте минимум 2 файла в режиме \"Мои файлы\""
     return correlation_own(None, 0, mode, custom_files, custom_vectors)
@@ -143,17 +141,14 @@ with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Base()) as 
                     corr_heatmap = gr.Plot()
                     lines_plot = gr.Plot()
 
-    # Визибилити
     mode2.change(update_visibility, inputs=mode2, outputs=[speaker2, num_phrases2, file_uploader, upload_btn, custom_list, delete_btn])
 
-    # Главное исправление: кнопка сразу обрабатывает и добавляет
     upload_btn.click(
         fn=add_custom_files,
         inputs=[file_uploader, custom_files_state, custom_vectors_state],
         outputs=[custom_list, custom_files_state, custom_vectors_state, status_box]
     )
 
-    # Автоматический пересчёт корреляции при изменении списка
     custom_vectors_state.change(
         fn=auto_correlation,
         inputs=[mode2, custom_files_state, custom_vectors_state],
@@ -167,4 +162,4 @@ with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Base()) as 
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)  # share=True для работы в WSL/контейнере
