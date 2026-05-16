@@ -50,6 +50,20 @@ def delete_custom_file(selected):
                 break
     return [[n] for n, _ in custom_files]
 
+def update_visibility(mode):
+    '''Conditional visibility based on mode'''
+    dataset_visible = mode in ["Датасет", "Датасет + мои файлы"]
+    custom_visible = mode in ["Мои файлы", "Датасет + мои файлы"]
+    return (
+        gr.update(visible=dataset_visible),  # speaker2
+        gr.update(visible=dataset_visible),  # num_phrases2
+        gr.update(visible=custom_visible),  # file_uploader
+        gr.update(visible=custom_visible),  # upload_btn
+        gr.update(visible=custom_visible),  # process_custom_btn
+        gr.update(visible=custom_visible),  # custom_list
+        gr.update(visible=custom_visible),  # delete_btn
+    )
+
 def correlation_own(speaker_id, num_phrases, mode):
     global custom_vectors
     vectors = []
@@ -133,21 +147,21 @@ with gr.Blocks(title="Dasha — Система биометрической об
                         gr.Plot()
                         gr.Plot()
 
-        # Вкладка 2 — ЧИСТАЯ И КРАСИВАЯ
+        # Вкладка 2
         with gr.Tab("2. Обнаружение корреляции среди своих"):
             with gr.Row():
                 with gr.Column(scale=1):
                     mode2 = gr.Radio(["Датасет", "Мои файлы", "Датасет + мои файлы"], value="Мои файлы", label="Что анализировать")
-                    speaker2 = gr.Dropdown(choices=list(speakers.keys()), label="Спикер из датасета")
-                    num_phrases2 = gr.Slider(2, 50, 10, step=1, label="Количество фраз из датасета")
+                    speaker2 = gr.Dropdown(choices=list(speakers.keys()), label="Спикер из датасета", visible=True)
+                    num_phrases2 = gr.Slider(2, 50, 10, step=1, label="Количество фраз из датасета", visible=True)
                     
                     gr.Markdown("### Загрузить свои файлы")
-                    file_uploader = gr.File(file_count="multiple", label="Выберите аудиофайлы")
-                    upload_btn = gr.Button("➕ Добавить файлы", variant="secondary")
-                    process_custom_btn = gr.Button("🔬 Обработать загруженные файлы", variant="primary")
+                    file_uploader = gr.File(file_count="multiple", label="Выберите аудиофайлы", visible=True)
+                    upload_btn = gr.Button("➕ Добавить файлы", variant="secondary", visible=True)
+                    process_custom_btn = gr.Button("🔬 Обработать загруженные файлы", variant="primary", visible=True)
                     
-                    custom_list = gr.Dataframe(headers=["Файл"], value=[], label="Загруженные файлы")
-                    delete_btn = gr.Button("🗑 Удалить выбранный файл")
+                    custom_list = gr.Dataframe(headers=["Файл"], value=[], label="Загруженные файлы", visible=True)
+                    delete_btn = gr.Button("🗑 Удалить выбранный файл", visible=True)
                     
                     corr_btn = gr.Button("📊 Вычислить корреляцию", variant="primary", size="large")
 
@@ -169,6 +183,12 @@ with gr.Blocks(title="Dasha — Система биометрической об
         correlation_own,
         inputs=[speaker2, num_phrases2, mode2],
         outputs=[corr_heatmap, lines_plot, corr_status]
+    )
+    # Conditional visibility
+    mode2.change(
+        update_visibility,
+        inputs=[mode2],
+        outputs=[speaker2, num_phrases2, file_uploader, upload_btn, process_custom_btn, custom_list, delete_btn]
     )
 
 if __name__ == "__main__":
