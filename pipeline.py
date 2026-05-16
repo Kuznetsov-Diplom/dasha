@@ -35,8 +35,10 @@ class AudioPipeline:
         hop_length = int(self.FRAME_SHIFT_MS * sr / 1000)
         vad_mask = self._vad_energy(y_pre, frame_length, hop_length)
 
-        mfcc = librosa.feature.mfcc(y=y_pre, sr=sr, n_mfcc=self.N_MFCC,
-                                    n_fft=frame_length, hop_length=hop_length, window="hamming
+        mfcc = librosa.feature.mfcc(
+            y=y_pre, sr=sr, n_mfcc=self.N_MFCC,
+            n_fft=frame_length, hop_length=hop_length, window="hamming"
+        )
         delta = librosa.feature.delta(mfcc, order=1)
         delta2 = librosa.feature.delta(mfcc, order=2)
         features_39 = np.vstack([mfcc, delta, delta2])
