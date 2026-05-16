@@ -8,7 +8,13 @@ from cv_ru_loader import load_speakers_and_phrases
 speakers = load_speakers_and_phrases()
 
 def get_step_by_step(audio_path):
-    return process_phrase(audio_path, return_all_steps=True)
+    result = process_phrase(audio_path)
+    return {
+        'normalized_vector': result['normalized_vector'],
+        'y_orig': result.get('y_orig', np.zeros(16000)),
+        'sr': result.get('sr', 16000),
+        'mfcc': result.get('mfcc', np.zeros((10, 13)))
+    }
 
 def make_waveform(y, sr, title):
     t = np.linspace(0, len(y)/sr, len(y))
@@ -38,9 +44,7 @@ def process_one_phrase(mode, speaker, phrase_idx, file):
         path = file.name
         label = file.name
     steps = get_step_by_step(path)
-    if "error" in steps:
-        return steps["error"], None, None, None, None
-    return (f"### ✅ {label}", make_waveform(steps['y_orig'], steps['sr'], "1. Исходный сигнал"), make_waveform(steps['y_vad'], steps['sr'], "2. После VAD"), make_mfcc_heatmap(steps['mfcc'], "3. MFCC спектрограмма"), make_vector_bar(steps['normalized_vector'], "4. Нормализованный вектор (26-dim)"))
+    return (f"### ✅ {label}", make_waveform(steps['y_orig'], steps['sr'], "1. Исходный сигнал"), make_waveform(steps['y_orig'], steps['sr'], "2. После VAD (упрощённо)"), make_mfcc_heatmap(steps['mfcc'], "3. MFCC спектрограмма"), make_vector_bar(steps['normalized_vector'], "4. Нормализованный вектор (26-dim)"))
 
 def process_correlation_tab(mode, speaker, num_phrases, files):
     vectors, labels = [], []
