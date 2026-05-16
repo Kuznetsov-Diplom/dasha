@@ -117,7 +117,7 @@ def auto_correlation(mode, custom_files, custom_vectors):
         return None, None, "Добавьте минимум 2 файла в режиме \"Мои файлы\""
     return correlation_own(None, 0, mode, custom_files, custom_vectors)
 
-with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Dark()) as demo:
+with gr.Blocks(title="Dasha — Биометрия", theme=gr.themes.Base()) as demo:
     gr.Markdown("# Dasha — Система биометрической обработки речи")
 
     with gr.Tabs():
