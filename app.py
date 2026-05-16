@@ -8,6 +8,8 @@ from cv_ru_loader import load_speakers_and_phrases
 
 speakers = load_speakers_and_phrases()
 
+N_FEATURES = 39  # 39-мерные признаки (MFCC + Delta + Delta-Delta)
+
 def get_audio_info(audio_path):
     import soundfile as sf
     try:
@@ -31,8 +33,8 @@ def process_one_phrase(mode, speaker, phrase_idx, file):
     t = np.linspace(0, len(y)/sr, len(y))
     fig_wave = go.Figure(go.Scatter(x=t, y=y, mode='lines'))
     fig_wave.update_layout(title="1. Исходный сигнал", height=280)
-    fig_vec = go.Figure(go.Bar(x=list(range(26)), y=result['normalized_vector']))
-    fig_vec.update_layout(title="2. Нормализованный вектор (26-dim)", height=320, yaxis_range=[0, 1])
+    fig_vec = go.Figure(go.Bar(x=list(range(N_FEATURES)), y=result['normalized_vector']))
+    fig_vec.update_layout(title=f"2. Нормализованный вектор ({N_FEATURES}-dim)", height=320, yaxis_range=[0, 1])
     if 'mfcc' in result and result['mfcc'] is not None:
         fig_mfcc = go.Figure(go.Heatmap(z=result['mfcc'].T, colorscale='Viridis'))
         fig_mfcc.update_layout(title="3. MFCC спектрограмма", height=320)
@@ -67,8 +69,8 @@ def process_correlation_tab(mode, speaker, num_phrases, files):
     fig1.update_layout(title="Матрица корреляции", height=520)
     fig2 = go.Figure()
     for i, v in enumerate(vectors):
-        fig2.add_trace(go.Scatter(x=list(range(26)), y=v, mode='lines+markers', name=labels[i]))
-    fig2.add_trace(go.Scatter(x=list(range(26)), y=mean_vec, mode='lines', name='Средний эталон', line=dict(color='black', width=4)))
+        fig2.add_trace(go.Scatter(x=list(range(N_FEATURES)), y=v, mode='lines+markers', name=labels[i]))
+    fig2.add_trace(go.Scatter(x=list(range(N_FEATURES)), y=mean_vec, mode='lines', name='Средний эталон', line=dict(color='black', width=4)))
     fig2.update_layout(title="Нормализованные векторы [0, 1]", height=420, yaxis_range=[0, 1])
     return fig1, fig2, f"**Записей:** {len(vectors)} | **Средняя корреляция:** {np.mean(corr[np.triu(np.ones_like(corr), 1).astype(bool)]):.3f}"
 
@@ -102,8 +104,8 @@ def process_gost_test(num_speakers, phrases_per_speaker):
     fig_heat.update_layout(title="Корреляция (ГОСТ 52633 - RMS)", height=550)
     fig_lines = go.Figure()
     for i, v in enumerate(all_vectors):
-        fig_lines.add_trace(go.Scatter(x=list(range(26)), y=v, mode='lines', name=all_labels[i]))
-    fig_lines.add_trace(go.Scatter(x=list(range(26)), y=global_mean, mode='lines', name='Глобальный эталон', line=dict(color='black', width=4)))
+        fig_lines.add_trace(go.Scatter(x=list(range(N_FEATURES)), y=v, mode='lines', name=all_labels[i]))
+    fig_lines.add_trace(go.Scatter(x=list(range(N_FEATURES)), y=global_mean, mode='lines', name='Глобальный эталон', line=dict(color='black', width=4)))
     fig_lines.update_layout(title="Векторы + Глобальный эталон", height=450, yaxis_range=[0, 1])
     rms_text = "<br>".join([f"{sp[:10]}: RMS={rms:.4f}" for sp, rms in speaker_rms.items()])
     status = f"**Спикеров:** {len(selected)} | **Фраз:** {len(all_vectors)}<br>**Средний RMS:** {np.mean(list(speaker_rms.values())):.4f}<br>{rms_text}"
