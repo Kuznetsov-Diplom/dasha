@@ -1,9 +1,8 @@
-# Dasha — Voice Biometrics (GOST R 52633)
+# Dasha Voice Biometrics
 
-Переписанный чистый код для дипломной работы.
+Voice-based biometric key generation system based on GOST R 52633.
 
-## Запуск
-python -m pip install -r requirements.txt
-python app.py
+## Setup
 
-Конфиг в config.py
+1. Install requirements: `pip install -r requirements.txt`
+2. Run `streamlit run app.py`
